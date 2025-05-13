@@ -31,8 +31,8 @@ x-geonetwork-environment:
     -Des.url=http://elasticsearch:9200
     -Des.username=
     -Des.password=
-    -Dgeonetwork.ESFeaturesProxy.targetUri=http://laughing-potato-q6w9rqrvr7jfvv9.github.dev-8080.app.github.dev/gn-features/{_} # use the ogc-api-records-service internal name
-    -Dgeonetwork.MicroServicesProxy.targetUri=http://laughing-potato-q6w9rqrvr7jfvv9.github.dev-8080.app.github.dev/ogc-api-records-service #use ogc api records service internal name
+    -Dgeonetwork.ESFeaturesProxy.targetUri=http://${SERVER_NAME}-8080.app.github.dev/gn-features/{_} # use the ogc-api-records-service internal name
+    -Dgeonetwork.MicroServicesProxy.targetUri=http://${SERVER_NAME}-8080.app.github.dev/ogc-api-records-service #use ogc api records service internal name
   GEONETWORK_DB_TYPE: postgres
   GEONETWORK_DB_HOST: database
   GEONETWORK_DB_PORT: 5432
@@ -44,9 +44,12 @@ x-geonetwork-environment:
 # geonetwork web  settings
 x-service-geonetwork:
   &default-service-geonetwork
-  image: geonetwork:4.4.6
+  build:
+    context: .
+    dockerfile: Dockerfile
+  # image: geonetwork:4.4.6
   healthcheck:
-    test: "curl https://laughing-potato-q6w9rqrvr7jfvv9.github.dev-443.app.github.dev/"
+    test: "curl https://${SERVER_URL}/"
     interval: 5s
     timeout: 5s
     retries: 30
@@ -64,44 +67,43 @@ x-service-geonetwork:
     - gn-network
 
 services:
-  db:
-    image: postgres:13
+  keycloak_db:
+    image: postgis/postgis:11-2.5
     environment:
-      POSTGRES_USER: keycloak
-      POSTGRES_PASSWORD: password
       POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: keycloak_password
     volumes:
-      - db-data:/var/lib/postgresql/data
+      - keycloak_data:/var/lib/postgresql/data
     networks:
       - gn-network
+    restart: unless-stopped
  
   keycloak:
     image: quay.io/keycloak/keycloak:latest
-    command: start-dev --import-realm
+    command: start-dev
+    ports:
+      - "9085:8080"
     environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://keycloak_db:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: keycloak_password
+      KC_PROXY: edge
       KC_HTTP_RELATIVE_PATH: /auth
       KEYCLOAK_ADMIN: admin
-      KEYCLOAK_ADMIN_THEME: keycloak
       KEYCLOAK_ADMIN_PASSWORD: admin
-      KC_DB: postgres
-      KC_DB_URL: jdbc:postgresql://db:5432/keycloak
-      KC_DB_USERNAME: keycloak
-      KC_DB_PASSWORD: password
-      KC_HTTP_PORT: 8085   # Internal port
-      KC_HOSTNAME: https://laughing-potato-q6w9rqrvr7jfvv9-443.app.github.dev/auth # Internal hostname
       KC_PROXY_HEADERS: xforwarded
+      PROXY_ADDRESS_FORWARDING: true
+      KC_HOSTNAME: https://${SERVER_URL}/auth
       QUARKUS_DATASOURCE_JDBC_POOL_SIZE: 20
-      PROXY_ADDRESS_FORWARDING: true # Enable proxy awareness
     depends_on:
-      - db
-    ports:
-      - 8085:8085
-    volumes:
-      - ./realm-export:/opt/keycloak/data/import/export.json # optional
+      - keycloak_db
     networks:
       - gn-network
+    restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "https://laughing-potato-q6w9rqrvr7jfvv9.github.dev-8085.app.github.dev/realms/master"]
+      test: ["CMD", "curl", "-f", "https://${SERVER_URL}/auth/realms/master"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -116,8 +118,8 @@ services:
       ACTIVEMQ_TEMP_USAGE_LIMIT: 10GB
       GEONETWORK_SECURITY_TYPE: openidconnect 
       OPENIDCONNECT_CLIENTID: geonetwork 
-      OPENIDCONNECT_CLIENTSECRET: a76h6aes7XnC2G8FB150FWDFTDcHD4zQ
-      OPENIDCONNECT_SERVERMETADATA_JSON_TEXT: '{"issuer":"https://laughing-potato-q6w9rqrvr7jfvv9-443.app.github.dev/auth/realms/master","authorization_endpoint":"https://laughing-potato-q6w9rqrvr7jfvv9-443.app.github.dev/auth/realms/master/protocol/openid-connect/auth","token_endpoint":"https://laughing-potato-q6w9rqrvr7jfvv9-443.app.github.dev/auth/realms/master/protocol/openid-connect/token","introspection_endpoint":"https://laughing-potato-q6w9rqrvr7jfvv9-443.app.github.dev/auth/realms/master/protocol/openid-connect/token/introspect","userinfo_endpoint":"https://laughing-potato-q6w9rqrvr7jfvv9-443.app.github.dev/auth/realms/master/protocol/openid-connect/userinfo","end_session_endpoint":"https://laughing-potato-q6w9rqrvr7jfvv9-443.app.github.dev/auth/realms/master/protocol/openid-connect/logout","frontchannel_logout_session_supported":true,"frontchannel_logout_supported":true,"jwks_uri":"https://laughing-potato-q6w9rqrvr7jfvv9-443.app.github.dev/auth/realms/master/protocol/openid-connect/certs","check_session_iframe":"https://laughing-potato-q6w9rqrvr7jfvv9-443.app.github.dev/auth/realms/master/protocol/openid-connect/login-status-iframe.html","grant_types_supported":["authorization_code","client_credentials","implicit","password","refresh_token","urn:ietf:params:oauth:grant-type:device_code","urn:ietf:params:oauth:grant-type:token-exchange","urn:ietf:params:oauth:grant-type:uma-ticket","urn:openid:params:grant-type:ciba"],"acr_values_supported":["0","1"],"response_types_supported":["code","none","id_token","token","id_token token","code id_token","code token","code id_token token"],"subject_types_supported":["public","pairwise"],"prompt_values_supported":["none","login","consent"],"id_token_signing_alg_values_supported":["PS384","RS384","EdDSA","ES384","HS256","HS512","ES256","RS256","HS384","ES512","PS256","PS512","RS512"],"id_token_encryption_alg_values_supported":["ECDH-ES+A256KW","ECDH-ES+A192KW","ECDH-ES+A128KW","RSA-OAEP","RSA-OAEP-256","RSA1_5","ECDH-ES"],"id_token_encryption_enc_values_supported":["A256GCM","A192GCM","A128GCM","A128CBC-HS256","A192CBC-HS384","A256CBC-HS512"],"userinfo_signing_alg_values_supported":["PS384","RS384","EdDSA","ES384","HS256","HS512","ES256","RS256","HS384","ES512","PS256","PS512","RS512","none"],"userinfo_encryption_alg_values_supported":["ECDH-ES+A256KW","ECDH-ES+A192KW","ECDH-ES+A128KW","RSA-OAEP","RSA-OAEP-256","RSA1_5","ECDH-ES"],"userinfo_encryption_enc_values_supported":["A256GCM","A192GCM","A128GCM","A128CBC-HS256","A192CBC-HS384","A256CBC-HS512"],"request_object_signing_alg_values_supported":["PS384","RS384","EdDSA","ES384","HS256","HS512","ES256","RS256","HS384","ES512","PS256","PS512","RS512","none"],"request_object_encryption_alg_values_supported":["ECDH-ES+A256KW","ECDH-ES+A192KW","ECDH-ES+A128KW","RSA-OAEP","RSA-OAEP-256","RSA1_5","ECDH-ES"],"request_object_encryption_enc_values_supported":["A256GCM","A192GCM","A128GCM","A128CBC-HS256","A192CBC-HS384","A256CBC-HS512"],"response_modes_supported":["query","fragment","form_post","query.jwt","fragment.jwt","form_post.jwt","jwt"],"registration_endpoint":"https://laughing-potato-q6w9rqrvr7jfvv9-443.app.github.dev/auth/realms/master/clients-registrations/openid-connect","token_endpoint_auth_methods_supported":["private_key_jwt","client_secret_basic","client_secret_post","tls_client_auth","client_secret_jwt"],"token_endpoint_auth_signing_alg_values_supported":["PS384","RS384","EdDSA","ES384","HS256","HS512","ES256","RS256","HS384","ES512","PS256","PS512","RS512"],"introspection_endpoint_auth_methods_supported":["private_key_jwt","client_secret_basic","client_secret_post","tls_client_auth","client_secret_jwt"],"introspection_endpoint_auth_signing_alg_values_supported":["PS384","RS384","EdDSA","ES384","HS256","HS512","ES256","RS256","HS384","ES512","PS256","PS512","RS512"],"authorization_signing_alg_values_supported":["PS384","RS384","EdDSA","ES384","HS256","HS512","ES256","RS256","HS384","ES512","PS256","PS512","RS512"],"authorization_encryption_alg_values_supported":["ECDH-ES+A256KW","ECDH-ES+A192KW","ECDH-ES+A128KW","RSA-OAEP","RSA-OAEP-256","RSA1_5","ECDH-ES"],"authorization_encryption_enc_values_supported":["A256GCM","A192GCM","A128GCM","A128CBC-HS256","A192CBC-HS384","A256CBC-HS512"],"claims_supported":["aud","sub","iss","auth_time","name","given_name","family_name","preferred_username","email","acr"],"claim_types_supported":["normal"],"claims_parameter_supported":true,"scopes_supported":["openid","acr","microprofile-jwt","basic","organization","roles","offline_access","profile","email","web-origins","address","phone","service_account"],"request_parameter_supported":true,"request_uri_parameter_supported":true,"require_request_uri_registration":true,"code_challenge_methods_supported":["plain","S256"],"tls_client_certificate_bound_access_tokens":true,"revocation_endpoint":"https://laughing-potato-q6w9rqrvr7jfvv9-443.app.github.dev/auth/realms/master/protocol/openid-connect/revoke","revocation_endpoint_auth_methods_supported":["private_key_jwt","client_secret_basic","client_secret_post","tls_client_auth","client_secret_jwt"],"revocation_endpoint_auth_signing_alg_values_supported":["PS384","RS384","EdDSA","ES384","HS256","HS512","ES256","RS256","HS384","ES512","PS256","PS512","RS512"],"backchannel_logout_supported":true,"backchannel_logout_session_supported":true,"device_authorization_endpoint":"https://laughing-potato-q6w9rqrvr7jfvv9-443.app.github.dev/auth/realms/master/protocol/openid-connect/auth/device","backchannel_token_delivery_modes_supported":["poll","ping"],"backchannel_authentication_endpoint":"https://laughing-potato-q6w9rqrvr7jfvv9-443.app.github.dev/auth/realms/master/protocol/openid-connect/ext/ciba/auth","backchannel_authentication_request_signing_alg_values_supported":["PS384","RS384","EdDSA","ES384","ES256","RS256","ES512","PS256","PS512","RS512"],"require_pushed_authorization_requests":false,"pushed_authorization_request_endpoint":"https://laughing-potato-q6w9rqrvr7jfvv9-443.app.github.dev/auth/realms/master/protocol/openid-connect/ext/par/request","mtls_endpoint_aliases":{"token_endpoint":"https://laughing-potato-q6w9rqrvr7jfvv9-443.app.github.dev/auth/realms/master/protocol/openid-connect/token","revocation_endpoint":"https://laughing-potato-q6w9rqrvr7jfvv9-443.app.github.dev/auth/realms/master/protocol/openid-connect/revoke","introspection_endpoint":"https://laughing-potato-q6w9rqrvr7jfvv9-443.app.github.dev/auth/realms/master/protocol/openid-connect/token/introspect","device_authorization_endpoint":"https://laughing-potato-q6w9rqrvr7jfvv9-443.app.github.dev/auth/realms/master/protocol/openid-connect/auth/device","registration_endpoint":"https://laughing-potato-q6w9rqrvr7jfvv9-443.app.github.dev/auth/realms/master/clients-registrations/openid-connect","userinfo_endpoint":"https://laughing-potato-q6w9rqrvr7jfvv9-443.app.github.dev/auth/realms/master/protocol/openid-connect/userinfo","pushed_authorization_request_endpoint":"https://laughing-potato-q6w9rqrvr7jfvv9-443.app.github.dev/auth/realms/master/protocol/openid-connect/ext/par/request","backchannel_authentication_endpoint":"https://laughing-potato-q6w9rqrvr7jfvv9-443.app.github.dev/auth/realms/master/protocol/openid-connect/ext/ciba/auth"},"authorization_response_iss_parameter_supported":true}'
+      OPENIDCONNECT_CLIENTSECRET: 5b8UlQYT4uoZX0YuXHDOH1OvhgsSeKWf
+      OPENIDCONNECT_SERVERMETADATA_JSON_TEXT: '{"issuer":"https://${SERVER_URL}/auth/realms/master","authorization_endpoint":"https://${SERVER_URL}/auth/realms/master/protocol/openid-connect/auth","token_endpoint":"https://${SERVER_URL}/auth/realms/master/protocol/openid-connect/token","introspection_endpoint":"https://${SERVER_URL}/auth/realms/master/protocol/openid-connect/token/introspect","userinfo_endpoint":"https://${SERVER_URL}/auth/realms/master/protocol/openid-connect/userinfo","end_session_endpoint":"https://${SERVER_URL}/auth/realms/master/protocol/openid-connect/logout","frontchannel_logout_session_supported":true,"frontchannel_logout_supported":true,"jwks_uri":"https://${SERVER_URL}/auth/realms/master/protocol/openid-connect/certs","check_session_iframe":"https://${SERVER_URL}/auth/realms/master/protocol/openid-connect/login-status-iframe.html","grant_types_supported":["authorization_code","client_credentials","implicit","password","refresh_token","urn:ietf:params:oauth:grant-type:device_code","urn:ietf:params:oauth:grant-type:token-exchange","urn:openid:params:grant-type:ciba"],"acr_values_supported":["0","1"],"response_types_supported":["code","none","id_token","token","id_token token","code id_token","code token","code id_token token"],"subject_types_supported":["public","pairwise"],"prompt_values_supported":["none","login","consent"],"id_token_signing_alg_values_supported":["PS384","RS384","EdDSA","ES384","HS256","HS512","ES256","RS256","HS384","ES512","PS256","PS512","RS512"],"id_token_encryption_alg_values_supported":["ECDH-ES+A256KW","ECDH-ES+A192KW","ECDH-ES+A128KW","RSA-OAEP","RSA-OAEP-256","RSA1_5","ECDH-ES"],"id_token_encryption_enc_values_supported":["A256GCM","A192GCM","A128GCM","A128CBC-HS256","A192CBC-HS384","A256CBC-HS512"],"userinfo_signing_alg_values_supported":["PS384","RS384","EdDSA","ES384","HS256","HS512","ES256","RS256","HS384","ES512","PS256","PS512","RS512","none"],"userinfo_encryption_alg_values_supported":["ECDH-ES+A256KW","ECDH-ES+A192KW","ECDH-ES+A128KW","RSA-OAEP","RSA-OAEP-256","RSA1_5","ECDH-ES"],"userinfo_encryption_enc_values_supported":["A256GCM","A192GCM","A128GCM","A128CBC-HS256","A192CBC-HS384","A256CBC-HS512"],"request_object_signing_alg_values_supported":["PS384","RS384","EdDSA","ES384","HS256","HS512","ES256","RS256","HS384","ES512","PS256","PS512","RS512","none"],"request_object_encryption_alg_values_supported":["ECDH-ES+A256KW","ECDH-ES+A192KW","ECDH-ES+A128KW","RSA-OAEP","RSA-OAEP-256","RSA1_5","ECDH-ES"],"request_object_encryption_enc_values_supported":["A256GCM","A192GCM","A128GCM","A128CBC-HS256","A192CBC-HS384","A256CBC-HS512"],"response_modes_supported":["query","fragment","form_post","query.jwt","fragment.jwt","form_post.jwt","jwt"],"registration_endpoint":"https://${SERVER_URL}/auth/realms/master/clients-registrations/openid-connect","token_endpoint_auth_methods_supported":["private_key_jwt","client_secret_basic","client_secret_post","tls_client_auth","client_secret_jwt"],"token_endpoint_auth_signing_alg_values_supported":["PS384","RS384","EdDSA","ES384","HS256","HS512","ES256","RS256","HS384","ES512","PS256","PS512","RS512"],"introspection_endpoint_auth_methods_supported":["private_key_jwt","client_secret_basic","client_secret_post","tls_client_auth","client_secret_jwt"],"introspection_endpoint_auth_signing_alg_values_supported":["PS384","RS384","EdDSA","ES384","HS256","HS512","ES256","RS256","HS384","ES512","PS256","PS512","RS512"],"authorization_signing_alg_values_supported":["PS384","RS384","EdDSA","ES384","HS256","HS512","ES256","RS256","HS384","ES512","PS256","PS512","RS512"],"authorization_encryption_alg_values_supported":["ECDH-ES+A256KW","ECDH-ES+A192KW","ECDH-ES+A128KW","RSA-OAEP","RSA-OAEP-256","RSA1_5","ECDH-ES"],"authorization_encryption_enc_values_supported":["A256GCM","A192GCM","A128GCM","A128CBC-HS256","A192CBC-HS384","A256CBC-HS512"],"claims_supported":["aud","sub","iss","auth_time","name","given_name","family_name","preferred_username","email","acr"],"claim_types_supported":["normal"],"claims_parameter_supported":true,"scopes_supported":["openid","acr","microprofile-jwt","basic","organization","roles","offline_access","profile","email","web-origins","address","phone","service_account"],"request_parameter_supported":true,"request_uri_parameter_supported":true,"require_request_uri_registration":true,"code_challenge_methods_supported":["plain","S256"],"tls_client_certificate_bound_access_tokens":true,"revocation_endpoint":"https://${SERVER_URL}/auth/realms/master/protocol/openid-connect/revoke","revocation_endpoint_auth_methods_supported":["private_key_jwt","client_secret_basic","client_secret_post","tls_client_auth","client_secret_jwt"],"revocation_endpoint_auth_signing_alg_values_supported":["PS384","RS384","EdDSA","ES384","HS256","HS512","ES256","RS256","HS384","ES512","PS256","PS512","RS512"],"backchannel_logout_supported":true,"backchannel_logout_session_supported":true,"device_authorization_endpoint":"https://${SERVER_URL}/auth/realms/master/protocol/openid-connect/auth/device","backchannel_token_delivery_modes_supported":["poll","ping"],"backchannel_authentication_endpoint":"https://${SERVER_URL}/auth/realms/master/protocol/openid-connect/ext/ciba/auth","backchannel_authentication_request_signing_alg_values_supported":["PS384","RS384","EdDSA","ES384","ES256","RS256","ES512","PS256","PS512","RS512"],"require_pushed_authorization_requests":false,"pushed_authorization_request_endpoint":"https://${SERVER_URL}/auth/realms/master/protocol/openid-connect/ext/par/request","mtls_endpoint_aliases":{"token_endpoint":"https://${SERVER_URL}/auth/realms/master/protocol/openid-connect/token","revocation_endpoint":"https://${SERVER_URL}/auth/realms/master/protocol/openid-connect/revoke","introspection_endpoint":"https://${SERVER_URL}/auth/realms/master/protocol/openid-connect/token/introspect","device_authorization_endpoint":"https://${SERVER_URL}/auth/realms/master/protocol/openid-connect/auth/device","registration_endpoint":"https://${SERVER_URL}/auth/realms/master/clients-registrations/openid-connect","userinfo_endpoint":"https://${SERVER_URL}/auth/realms/master/protocol/openid-connect/userinfo","pushed_authorization_request_endpoint":"https://${SERVER_URL}/auth/realms/master/protocol/openid-connect/ext/par/request","backchannel_authentication_endpoint":"https://${SERVER_URL}/auth/realms/master/protocol/openid-connect/ext/ciba/auth"},"authorization_response_iss_parameter_supported":true}'
       OPENIDCONNECT_IDTOKENROLELOCATION: resource_access.geonetwork.roles
       # GEONETWORK_SECURITY_TYPE: keycloak
       # KEYCLOAK_AUTH_SERVER_URL: https://laughing-potato-q6w9rqrvr7jfvv9-443.app.github.dev/auth
@@ -133,10 +135,10 @@ services:
     depends_on:
       - elasticsearch
       - keycloak
-    volumes:
-#      - geonetwork_data:/usr/local/geonetwork/data
-#      - geonetwork_config:/usr/local/geonetwork/config
-      - ./config-security.properties:/opt/geonetwork/WEB-INF/config-security/config-security.properties
+    # volumes:
+    #   # - geonetwork_data:/usr/local/geonetwork/data
+    #   # - geonetwork_config:/usr/local/geonetwork/config
+    #   - ./config-security.properties:/opt/geonetwork/WEB-INF/config-security/config-security.properties
 
   database:
     image: postgis/postgis:11-2.5
@@ -193,7 +195,7 @@ services:
         soft: 65536
         hard: 65536
     healthcheck:
-      test: ["CMD", "curl", "-s", "-XGET", "http://laughing-potato-q6w9rqrvr7jfvv9.github.dev-9200.app.github.dev/_cluster/health?wait_for_status=yellow&timeout=5s"]
+      test: ["CMD", "curl", "-s", "-XGET", "http://${SERVER_NAME}-9200.app.github.dev/_cluster/health?wait_for_status=yellow&timeout=5s"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -216,7 +218,7 @@ services:
     image: kibana:8.14.3
     environment:
       SERVER_NAME: "kibana"
-      ELASTICSEARCH_URL: http://laughing-potato-q6w9rqrvr7jfvv9.github.dev-9200.app.github.dev
+      ELASTICSEARCH_URL: http://${SERVER_NAME}-9200.app.github.dev
       SERVER_BASEPATH: /geonetwork/dashboards
       SERVER_REWRITEBASEPATH: "false"
       XPACK_MONITORING_UI_CONTAINER_ELASTICSEARCH_ENABLED: "true"
@@ -233,11 +235,8 @@ networks:
     external: true 
 
 volumes:
-  es_data:
-  keycloak_data:
-  geonetwork_data:
-  geonetwork_config:
   db-data:
   esdata:
   pgdata:
   pglog:
+  keycloak_data:

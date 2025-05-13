@@ -1,0 +1,183 @@
+volumes:
+  geonetwork:
+  esdata:
+  pgdata:
+  pglog:
+  nginxlog:
+  keycloak_data:
+
+
+networks:
+  gn-network:
+    driver: bridge
+
+services:
+  # Nginx reverse proxy
+  nginx:
+    image: nginx:latest
+    ports:
+      - "80:80"
+      - "443:443"
+    # environment:
+    #   # Only used for / redirect to default webapp
+    #   # - NGINX_PUBLIC_HOST=195.201.225.214
+    #   - NGINX_PUBLIC_HOST=catalogue.localhost.test
+    #   # - NGINX_HOST=195.201.225.214
+    #   - NGINX_HOST=catalogue.localhost.test
+    #   - NGINX_PORT=443
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - nginxlog:/var/log/nginx
+      - ./certs:/etc/nginx/certs # For HTTPS (self-signed or real)
+    depends_on:
+      - keycloak
+      - geonetwork
+    networks:
+      - gn-network
+    restart: unless-stopped    
+    
+
+  database:
+    image: postgis/postgis:11-2.5
+    environment:
+      POSTGRES_USER: geonetwork
+      POSTGRES_PASSWORD: geonetwork
+      POSTGRES_DB: geonetwork
+    command: [ "postgres",
+               "-c", "log_statement=all",
+               "-c", "logging_collector=true",
+               "-c", "log_file_mode=0644",
+               "-c", "log_directory=/var/log/postgresql",
+               "-c", "log_filename=postgresql.log" ]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - pglog:/var/log/postgresql
+    networks:
+      - gn-network
+  
+  keycloak_db:
+    image: postgis/postgis:11-2.5
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: keycloak_password
+    volumes:
+      - keycloak_data:/var/lib/postgresql/data
+    networks:
+      - gn-network
+    restart: unless-stopped
+
+####
+# Geonetwork 4.2 and 4.4 official image have issues with OpenID Connect.
+# The redirect URI is not working as expected.
+# https://github.com/geonetwork/core-geonetwork/issues/6947
+# https://github.com/geonetwork/docker-geonetwork/issues/105
+# I updated official image with a self-signed certificate,
+# jingking/geonetwork-hnap:4.2.8
+# Then set up nginx as reverse proxy,
+# proxy_pass         "https://localhost:8443";
+# The redirect URI works as expected.
+####
+  geonetwork:
+    build:
+       context: .
+       dockerfile: Dockerfile
+    restart: always
+    environment:
+      DATA_DIR: /catalogue-data
+      WEBAPP_CONTEXT_PATH: /geonetwork
+      JAVA_OPTS: >
+        -Dorg.eclipse.jetty.annotations.AnnotationParser.LEVEL=OFF
+        -Dorg.eclipse.jetty.server.ForwardedRequestCustomizer.ENABLED=true
+        -Djetty.httpConfig.forwardedPortAsAuthority=true
+        -Djetty.xForwarded=true
+        -Djava.security.egd=file:/dev/./urandom -Djava.awt.headless=true
+        -Xms512M -Xss512M -Xmx2G -XX:+UseConcMarkSweepGC
+        -Dgeonetwork.resources.dir=/catalogue-data/resources
+        -Dgeonetwork.data.dir=/catalogue-data
+        -Dgeonetwork.codeList.dir=/var/lib/jetty/webapps/geonetwork/WEB-INF/data/config/codelist
+        -Dgeonetwork.schema.dir=/var/lib/jetty/webapps/geonetwork/WEB-INF/data/config/schema_plugins
+        -Des.host=elasticsearch
+        -Des.port=9200
+        -Des.protocol=http
+        -Des.url=http://elasticsearch:9200
+
+      ES_HOST: elasticsearch
+      ES_PROTOCOL: http
+      ES_PORT: 9200
+
+      KB_URL: http://kibana:5601
+
+      GEONETWORK_DB_TYPE: postgres
+      GEONETWORK_DB_HOST: database
+      GEONETWORK_DB_PORT: 5432
+      GEONETWORK_DB_NAME: geonetwork
+      GEONETWORK_DB_USERNAME: geonetwork
+      GEONETWORK_DB_PASSWORD: geonetwork      
+
+      # GEONETWORK_SECURITY_TYPE: openidconnect 
+      OPENIDCONNECT_CLIENTID: geonetwork 
+      OPENIDCONNECT_CLIENTSECRET: yeADBXVXLHxPf91s28zuU2rqeScrqAmG
+      OPENIDCONNECT_SERVERMETADATA_JSON_TEXT: '{"issuer":"https://catalogue.localhost.test/auth/realms/master","authorization_endpoint":"https://catalogue.localhost.test/auth/realms/master/protocol/openid-connect/auth","token_endpoint":"https://catalogue.localhost.test/auth/realms/master/protocol/openid-connect/token","introspection_endpoint":"https://catalogue.localhost.test/auth/realms/master/protocol/openid-connect/token/introspect","userinfo_endpoint":"https://catalogue.localhost.test/auth/realms/master/protocol/openid-connect/userinfo","end_session_endpoint":"https://catalogue.localhost.test/auth/realms/master/protocol/openid-connect/logout","frontchannel_logout_session_supported":true,"frontchannel_logout_supported":true,"jwks_uri":"https://catalogue.localhost.test/auth/realms/master/protocol/openid-connect/certs","check_session_iframe":"https://catalogue.localhost.test/auth/realms/master/protocol/openid-connect/login-status-iframe.html","grant_types_supported":["authorization_code","client_credentials","implicit","password","refresh_token","urn:ietf:params:oauth:grant-type:device_code","urn:ietf:params:oauth:grant-type:token-exchange","urn:ietf:params:oauth:grant-type:uma-ticket","urn:openid:params:grant-type:ciba"],"acr_values_supported":["0","1"],"response_types_supported":["code","none","id_token","token","id_token token","code id_token","code token","code id_token token"],"subject_types_supported":["public","pairwise"],"prompt_values_supported":["none","login","consent"],"id_token_signing_alg_values_supported":["PS384","RS384","EdDSA","ES384","HS256","HS512","ES256","RS256","HS384","ES512","PS256","PS512","RS512"],"id_token_encryption_alg_values_supported":["ECDH-ES+A256KW","ECDH-ES+A192KW","ECDH-ES+A128KW","RSA-OAEP","RSA-OAEP-256","RSA1_5","ECDH-ES"],"id_token_encryption_enc_values_supported":["A256GCM","A192GCM","A128GCM","A128CBC-HS256","A192CBC-HS384","A256CBC-HS512"],"userinfo_signing_alg_values_supported":["PS384","RS384","EdDSA","ES384","HS256","HS512","ES256","RS256","HS384","ES512","PS256","PS512","RS512","none"],"userinfo_encryption_alg_values_supported":["ECDH-ES+A256KW","ECDH-ES+A192KW","ECDH-ES+A128KW","RSA-OAEP","RSA-OAEP-256","RSA1_5","ECDH-ES"],"userinfo_encryption_enc_values_supported":["A256GCM","A192GCM","A128GCM","A128CBC-HS256","A192CBC-HS384","A256CBC-HS512"],"request_object_signing_alg_values_supported":["PS384","RS384","EdDSA","ES384","HS256","HS512","ES256","RS256","HS384","ES512","PS256","PS512","RS512","none"],"request_object_encryption_alg_values_supported":["ECDH-ES+A256KW","ECDH-ES+A192KW","ECDH-ES+A128KW","RSA-OAEP","RSA-OAEP-256","RSA1_5","ECDH-ES"],"request_object_encryption_enc_values_supported":["A256GCM","A192GCM","A128GCM","A128CBC-HS256","A192CBC-HS384","A256CBC-HS512"],"response_modes_supported":["query","fragment","form_post","query.jwt","fragment.jwt","form_post.jwt","jwt"],"registration_endpoint":"https://catalogue.localhost.test/auth/realms/master/clients-registrations/openid-connect","token_endpoint_auth_methods_supported":["private_key_jwt","client_secret_basic","client_secret_post","tls_client_auth","client_secret_jwt"],"token_endpoint_auth_signing_alg_values_supported":["PS384","RS384","EdDSA","ES384","HS256","HS512","ES256","RS256","HS384","ES512","PS256","PS512","RS512"],"introspection_endpoint_auth_methods_supported":["private_key_jwt","client_secret_basic","client_secret_post","tls_client_auth","client_secret_jwt"],"introspection_endpoint_auth_signing_alg_values_supported":["PS384","RS384","EdDSA","ES384","HS256","HS512","ES256","RS256","HS384","ES512","PS256","PS512","RS512"],"authorization_signing_alg_values_supported":["PS384","RS384","EdDSA","ES384","HS256","HS512","ES256","RS256","HS384","ES512","PS256","PS512","RS512"],"authorization_encryption_alg_values_supported":["ECDH-ES+A256KW","ECDH-ES+A192KW","ECDH-ES+A128KW","RSA-OAEP","RSA-OAEP-256","RSA1_5","ECDH-ES"],"authorization_encryption_enc_values_supported":["A256GCM","A192GCM","A128GCM","A128CBC-HS256","A192CBC-HS384","A256CBC-HS512"],"claims_supported":["aud","sub","iss","auth_time","name","given_name","family_name","preferred_username","email","acr"],"claim_types_supported":["normal"],"claims_parameter_supported":true,"scopes_supported":["openid","basic","microprofile-jwt","profile","roles","acr","phone","address","email","organization","offline_access","service_account","web-origins"],"request_parameter_supported":true,"request_uri_parameter_supported":true,"require_request_uri_registration":true,"code_challenge_methods_supported":["plain","S256"],"tls_client_certificate_bound_access_tokens":true,"revocation_endpoint":"https://catalogue.localhost.test/auth/realms/master/protocol/openid-connect/revoke","revocation_endpoint_auth_methods_supported":["private_key_jwt","client_secret_basic","client_secret_post","tls_client_auth","client_secret_jwt"],"revocation_endpoint_auth_signing_alg_values_supported":["PS384","RS384","EdDSA","ES384","HS256","HS512","ES256","RS256","HS384","ES512","PS256","PS512","RS512"],"backchannel_logout_supported":true,"backchannel_logout_session_supported":true,"device_authorization_endpoint":"https://catalogue.localhost.test/auth/realms/master/protocol/openid-connect/auth/device","backchannel_token_delivery_modes_supported":["poll","ping"],"backchannel_authentication_endpoint":"https://catalogue.localhost.test/auth/realms/master/protocol/openid-connect/ext/ciba/auth","backchannel_authentication_request_signing_alg_values_supported":["PS384","RS384","EdDSA","ES384","ES256","RS256","ES512","PS256","PS512","RS512"],"require_pushed_authorization_requests":false,"pushed_authorization_request_endpoint":"https://catalogue.localhost.test/auth/realms/master/protocol/openid-connect/ext/par/request","mtls_endpoint_aliases":{"token_endpoint":"https://catalogue.localhost.test/auth/realms/master/protocol/openid-connect/token","revocation_endpoint":"https://catalogue.localhost.test/auth/realms/master/protocol/openid-connect/revoke","introspection_endpoint":"https://catalogue.localhost.test/auth/realms/master/protocol/openid-connect/token/introspect","device_authorization_endpoint":"https://catalogue.localhost.test/auth/realms/master/protocol/openid-connect/auth/device","registration_endpoint":"https://catalogue.localhost.test/auth/realms/master/clients-registrations/openid-connect","userinfo_endpoint":"https://catalogue.localhost.test/auth/realms/master/protocol/openid-connect/userinfo","pushed_authorization_request_endpoint":"https://catalogue.localhost.test/auth/realms/master/protocol/openid-connect/ext/par/request","backchannel_authentication_endpoint":"https://catalogue.localhost.test/auth/realms/master/protocol/openid-connect/ext/ciba/auth"},"authorization_response_iss_parameter_supported":true}'
+      OPENIDCONNECT_IDTOKENROLELOCATION: resource_access.geonetwork.roles
+    volumes:
+      - geonetwork:/catalogue-data
+    depends_on:
+      - elasticsearch
+      - database
+    networks:
+      - gn-network
+
+  elasticsearch:
+    image: elasticsearch:7.17.15
+    ports:
+      - 9200:9200
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    environment:
+      ES_JAVA_OPTS: "-Xms1G -Xmx1G"
+      discovery.type: single-node
+    volumes:
+      - esdata:/usr/share/elasticsearch/data
+    networks:
+      - gn-network
+
+  kibana:
+    image: kibana:7.17.15
+    environment:
+      SERVER_NAME: 'kibana'
+      ELASTICSEARCH_URL: http://elasticsearch:9200/
+      SERVER_BASEPATH: /geonetwork/dashboards
+      SERVER_REWRITEBASEPATH: 'false'
+      KIBANA_INDEX: .dashboards
+      XPACK_MONITORING_UI_CONTAINER_ELASTICSEARCH_ENABLED: 'true'
+    networks:
+      - gn-network
+  
+  keycloak:
+    image: quay.io/keycloak/keycloak:latest
+    command: start-dev
+    ports:
+      - "9085:8080"
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://keycloak_db:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: keycloak_password
+      KC_PROXY: edge
+      KC_HTTP_RELATIVE_PATH: /auth
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_PROXY_HEADERS: xforwarded
+      PROXY_ADDRESS_FORWARDING: true
+      # KC_HOSTNAME: https://catalogue.localhost.test/auth
+    depends_on:
+      - keycloak_db
+    networks:
+      - gn-network
+    restart: unless-stopped
