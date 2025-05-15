@@ -170,16 +170,13 @@ services:
       - gn-network
 
   nginx:
-    build:
-      context: .
-      dockerfile: openresty.Dockerfile
+    image: nginx:latest
     ports:
       - "80:80"
       - "443:443"
     volumes:
-      - ./nginx/nginx.conf:/usr/local/openresty/nginx/conf/nginx.conf:ro
-      - ./nginx/lua:/etc/openresty/lua:ro
-      - ./certs:/usr/local/openresty/nginx/certs # For HTTPS (self-signed or real)
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./certs:/etc/nginx/certs # For HTTPS (self-signed or real)
     depends_on:
       - geonetwork
       - keycloak
@@ -187,22 +184,6 @@ services:
       - elasticsearch
     networks:         
       - gn-network
-
-  # nginx:
-  #   image: nginx:latest
-  #   ports:
-  #     - "80:80"
-  #     - "443:443"
-  #   volumes:
-  #     - ./nginx.conf:/etc/nginx/nginx.conf:ro
-  #     - ./certs:/etc/nginx/certs # For HTTPS (self-signed or real)
-  #   depends_on:
-  #     - geonetwork
-  #     - keycloak
-  #     - kibana
-  #     - elasticsearch
-  #   networks:         
-  #     - gn-network
 
   elasticsearch:
     image: elasticsearch:8.14.3
@@ -246,15 +227,13 @@ services:
         condition: service_healthy
     networks:
       - gn-network
-
   my-http-listener:
     image: mendhak/http-https-echo:31
     environment:
         - HTTP_PORT=8888
         - HTTPS_PORT=9999
-    networks:
-      - gn-network
 
+ 
 networks:
   gn-network:
     driver: bridge
