@@ -9,9 +9,9 @@
 			 to include presentation xslts from schemas that are plugged in -->
   <!-- plug in schemas - come next - managed by schema.add/update/delete -->
   <rewriteURI uriStartString="blanks/metadata-schema01" rewritePrefix="/opt/geonetwork/WEB-INF/data/config/schema_plugins/csw-record" />
-  <rewriteURI uriStartString="blanks/metadata-schema02" rewritePrefix="/opt/geonetwork/WEB-INF/data/config/schema_plugins/dublin-core" />
+  <rewriteURI uriStartString="blanks/metadata-schema02" rewritePrefix="/opt/geonetwork/WEB-INF/data/config/schema_plugins/iso19110" />
   <rewriteURI uriStartString="blanks/metadata-schema03" rewritePrefix="/opt/geonetwork/WEB-INF/data/config/schema_plugins/iso19139" />
   <rewriteURI uriStartString="blanks/metadata-schema04" rewritePrefix="/opt/geonetwork/WEB-INF/data/config/schema_plugins/iso19115-3.2018" />
-  <rewriteURI uriStartString="blanks/metadata-schema05" rewritePrefix="/opt/geonetwork/WEB-INF/data/config/schema_plugins/iso19110" />
+  <rewriteURI uriStartString="blanks/metadata-schema05" rewritePrefix="/opt/geonetwork/WEB-INF/data/config/schema_plugins/dublin-core" />
 </catalog>
 
